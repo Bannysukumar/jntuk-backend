@@ -115,8 +115,11 @@ def create_routes(app: FastAPI):
             "backlog count, an overall CGPA, total credits, and total backlogs. This "
             "is the right tool for `What is this student's effective academic "
             "standing?`. For raw per-attempt history, call getAllResult; for only the "
-            "still-failing subjects, call getBacklogs. Cached in Redis under "
-            "`<rollNo>Results`; falls back to a queued scrape on miss."
+            "still-failing subjects, call getBacklogs. Details include hall ticket, "
+            "college code, and college name from the roll number. JNTUK usually "
+            "returns grade and credits only (internal/external/total are often 0). "
+            "Cached in Redis under `<rollNo>Results`; falls back to a queued scrape "
+            "on miss."
         ),
         tags=["Results"],
     )
@@ -210,9 +213,9 @@ def create_routes(app: FastAPI):
     @router.get(
         "/api/grace-marks/eligibility",
         operation_id="check_grace_marks_eligibility",
-        summary="Check JNTUH grace-marks eligibility",
+        summary="Check JNTUK grace-marks eligibility",
         description=(
-            "Determines whether a final-year student is eligible for the JNTUH "
+            "Determines whether a final-year student is eligible for the JNTUK "
             "grace-marks scheme. Requires that 4-2 results have already synced into "
             "the database; B.Tech and B.Pharm only (rejected for other degrees). On "
             "success returns the student's backlog list (the same shape as "
@@ -232,7 +235,7 @@ def create_routes(app: FastAPI):
         "/api/grace-marks/proof",
         summary="Upload grace-marks proof document",
         description=(
-            "Uploads the supporting JNTUH sheet (PDF or image, ≤5MB) for a "
+            "Uploads the supporting JNTUK sheet (PDF or image, ≤5MB) for a "
             "grace-marks eligible student. Re-verifies eligibility with the same "
             "logic as grace-marks/eligibility, then verifies that the document is "
             "a Consolidated Marks Memo (CMM). Only a confirmed CMM is stored in "
@@ -362,8 +365,13 @@ def create_routes(app: FastAPI):
 
     @router.get(
         "/api/hardRefresh",
-        summary="Hard Refresh",
-        description="Refresh the result of student",
+        summary="Force a fresh JNTUK scrape",
+        description=(
+            "Clears this student's result cache and queue guards, then publishes a "
+            "scrape job. Returns 202 while the worker pulls currently published "
+            "JNTUK exams. Poll getAcademicResult until 200. Already-stored semesters "
+            "are kept even if JNTUK later unpublishes them."
+        ),
         tags=["Results"],
     )
     async def hard_refresh(
@@ -376,7 +384,7 @@ def create_routes(app: FastAPI):
         operation_id="get_notifications",
         summary="Fetch result notifications (paginated, filterable)",
         description=(
-            "Paginated JNTUH result notifications, filterable by `regulation`, "
+            "Paginated JNTUK result notifications, filterable by `regulation`, "
             "`degree`, `year`, `title`, and `category` (only `results` or `all` are "
             "honored — any other category returns an empty list). Cached in Redis "
             "for 5 minutes per filter combination. Use this for a filterable "
@@ -425,7 +433,7 @@ def create_routes(app: FastAPI):
         operation_id="get_calendars",
         summary="Fetch academic calendars",
         description=(
-            "Returns JNTUH academic calendars as a nested tree keyed by "
+            "Returns JNTUK academic calendars as a nested tree keyed by "
             "academic year → degree → study year → { calendar title: PDF link }. "
             "Sourced from the `academic_calendar` table and cached in Redis."
         ),
@@ -439,7 +447,7 @@ def create_routes(app: FastAPI):
         operation_id="get_syllabus",
         summary="Fetch syllabus",
         description=(
-            "Returns the JNTUH syllabus as a nested tree keyed by degree → "
+            "Returns the JNTUK syllabus as a nested tree keyed by degree → "
             "regulation → category → [ { title, link } ]. Degrees without a "
             "regulation collapse to degree → category → [...]. Sourced from the "
             "`syllabus` table and cached in Redis."
@@ -452,7 +460,7 @@ def create_routes(app: FastAPI):
     @router.post(
         "/api/chatbot",
         response_model=ChatResponse,
-        summary="Chat with the JNTUH results assistant",
+        summary="Chat with the JNTUK results assistant",
         description=(
             "Runs a bounded agent that may use only the read-only operations "
             "exposed by this application's MCP allowlist. Prior user/assistant "
@@ -563,7 +571,15 @@ def create_routes(app: FastAPI):
             remote=remote,
         )
 
-    @router.get("/api/health")
+    @router.get(
+        "/api/health",
+        summary="Service health check",
+        description=(
+            "Liveness probe for the JNTUK API process. This route does not require "
+            "`X-Api-Key`. It does not check JNTUK portal, Redis, or PostgreSQL."
+        ),
+        tags=["Health"],
+    )
     async def get_health():
         return JSONResponse(
             status_code=status.HTTP_200_OK,
@@ -574,4 +590,3 @@ def create_routes(app: FastAPI):
         )
 
     return router
-    register_apns_device,

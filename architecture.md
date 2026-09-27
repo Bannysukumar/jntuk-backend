@@ -1,4 +1,4 @@
-# JNTUH Results Backend Architecture
+# JNTUK Results Backend Architecture
 
 ## Purpose and scope
 
@@ -47,7 +47,7 @@ flowchart LR
 - Result notifications refresh immediately and then every 60 seconds.
 - Jobs refresh immediately and then every 24 hours, guarded by a Redis distributed lock so multiple API workers do not run the same scrape.
 
-The request stack applies CORS, the `X-Api-Key` guard, Redis-backed per-IP rate limiting, request logging, and Prometheus instrumentation. Production mode disables the interactive documentation URLs. `api/routes.py` is the transport layer; route handlers delegate business logic to `service/` modules.
+The request stack applies CORS (JNTUK frontends plus local dev), the `X-Api-Key` guard, Redis-backed per-IP rate limiting, request logging, and Prometheus instrumentation. OpenAPI servers list the current public host first so Swagger Try it out hits this API. Production mode disables the interactive documentation URLs. `api/routes.py` is the transport layer; route handlers delegate business logic to `service/` modules.
 
 The API also mounts a read-only FastApiMCP application at `/mcp`. MCP operations call the same FastAPI routes through an in-process ASGI client, so their behavior and data sources stay aligned with the HTTP API. Only operations in `config/mcp.py` are exposed. The chatbot uses the same MCP allowlist as tools when calling an optional OpenAI-compatible chat-completions provider.
 
@@ -63,7 +63,7 @@ For a student message, the worker finds a reachable JNTUK result host, loads alr
 ### Shared infrastructure
 
 - PostgreSQL is the source of truth. Prisma models students, subjects, immutable exam attempts, result-release metadata, subscriptions/devices, grace-marks proofs, academic content, jobs, and job locations.
-- Redis holds derived API responses, the working JNTUH server URL, scheduler locks, class-batch suppression keys, and SlowAPI rate-limit state. Result data remains readable from PostgreSQL if Redis is unavailable, but caching, shared rate limits, and distributed coordination degrade.
+- Redis holds derived API responses, the working JNTUK server URL, scheduler locks, class-batch suppression keys, and SlowAPI rate-limit state. Result data remains readable from PostgreSQL if Redis is unavailable, but caching, shared rate limits, and distributed coordination degrade.
 - RabbitMQ decouples HTTP latency from slow or unavailable university result servers. Publishers enforce separate normal and class queue thresholds before accepting more work.
 - Amazon S3, or an S3-compatible endpoint configured with `S3_ENDPOINT_URL`, stores verified grace-marks proof documents.
 
@@ -111,7 +111,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant MQ as RabbitMQ
     participant Worker as Result worker
-    participant JNTUH as JNTUK portal
+    participant JNTUK as JNTUK portal
 
     Client->>API: GET result view with validated roll number
     API->>Redis: Read view-specific cache key
@@ -132,8 +132,8 @@ sequenceDiagram
             API->>MQ: Queue roll number
             API-->>Client: 202 queued
             MQ->>Worker: Deliver roll number
-            Worker->>JNTUH: Look up published JNTUK exam UUIDs
-            JNTUH-->>Worker: Student and subject results
+            Worker->>JNTUK: Look up published JNTUK exam UUIDs
+            JNTUK-->>Worker: Student and subject results
             Worker->>DB: Upsert student, subjects, and marks
             Worker->>Redis: Invalidate derived result keys
             Worker-->>Client: Notify readiness through push providers
@@ -174,7 +174,7 @@ The class response is built immediately from matching PostgreSQL records. If rec
 
 ## Result notifications
 
-The API scheduler and the queue sentinel both call `refresh_notifications()`. It scrapes the JNTUH notification listing, parses release metadata, caches the raw notification set for 30 minutes, and upserts new `examcodes` rows. Newly discovered releases are sent to Telegram and broadcast to Android through Firebase Cloud Messaging and to iOS through APNs.
+The API scheduler and the queue sentinel both call `refresh_notifications()`. It scrapes the JNTUK notification listing, parses release metadata, caches the raw notification set for 30 minutes, and upserts new `examcodes` rows. Newly discovered releases are sent to Telegram and broadcast to Android through Firebase Cloud Messaging and to iOS through APNs.
 
 When a student scrape inserts new marks, the worker sends a legacy per-user Web Push message and mobile result-ready notifications to Android/iOS subscriptions associated with that roll number. Grace-marks approval also triggers the mobile result-ready path.
 

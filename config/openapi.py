@@ -2,8 +2,8 @@
 
 
 OPENAPI_SERVERS = (
+    {"url": "http://185.216.203.209:8088/", "description": "Public JNTUK API"},
     {"url": "http://localhost:8000/", "description": "Local development"},
-    {"url": "https://jntuhresults.dhethi.com/", "description": "Production"},
 )
 
 

@@ -34,9 +34,6 @@ def test_local_and_production_servers_are_available_to_openapi_clients():
 
     assert result is schema
     assert schema["servers"] == [
+        {"url": "http://185.216.203.209:8088/", "description": "Public JNTUK API"},
         {"url": "http://localhost:8000/", "description": "Local development"},
-        {
-            "url": "https://jntuhresults.dhethi.com/",
-            "description": "Production",
-        },
     ]

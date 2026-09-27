@@ -95,7 +95,7 @@ async def evaluate_eligibility(roll_no: str):
 
 
 async def check_eligibility(app, roll_no: str):
-    """Determine whether a final-year student is eligible for the JNTUH grace-marks scheme.
+    """Determine whether a final-year student is eligible for the JNTUK grace-marks scheme.
 
     Two preconditions must hold: (1) the 5th char of the roll number must be
     `A` (B.Tech) or `R` (B.Pharm) — other degrees are rejected outright; (2)

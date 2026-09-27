@@ -96,14 +96,46 @@ def custom_openapi():
             title="JNTUK RESULTS API",
             version="0.1.0",
             summary="API for retrieving JNTUK student results and academic information",
-            description="The JNTUK Results API provides access to student records, including academic results, "
-            "backlog details, and overall performance summaries. This API is designed to streamline "
-            "access to university result data in a structured format.",
+            description=(
+                "JNTUK (Jawaharlal Nehru Technological University, Kakinada) results API. "
+                "Reads come from PostgreSQL/Redis. On a cache and database miss the roll "
+                "number is queued and the response is HTTP 202 until the worker scrapes "
+                "https://jntukresults.edu.in/. JNTUK publishes grade and credits; internal, "
+                "external, and total marks are often 0. Student name and father name are "
+                "usually absent. College name is derived from the hall-ticket college code. "
+                "Send `X-Api-Key` on every route except `/api/health`."
+            ),
             routes=app.routes,
         )
-        schema["info"]["x-logo"] = {
-            "url": "https://jntuhconnect.dhethi.com/_next/image?url=%2Fjntuhresults_md.png&w=256&q=75"
-        }
+        schema["tags"] = [
+            {
+                "name": "Results",
+                "description": (
+                    "Student result reads from Redis and PostgreSQL. A cache and "
+                    "database miss queues a JNTUK scrape and returns HTTP 202."
+                ),
+            },
+            {
+                "name": "Notifications",
+                "description": "Published JNTUK result-release notices.",
+            },
+            {
+                "name": "Content",
+                "description": "Academic calendars and syllabus links.",
+            },
+            {
+                "name": "Chatbot",
+                "description": "Read-only JNTUK results assistant over the MCP tool set.",
+            },
+            {
+                "name": "Jobs",
+                "description": "Fresher and internship engineering listings.",
+            },
+            {
+                "name": "Health",
+                "description": "API process liveness.",
+            },
+        ]
         schema = add_api_key_security(schema, API_KEY_HEADER)
         app.openapi_schema = add_servers(schema)
     return app.openapi_schema
@@ -135,12 +167,12 @@ app.add_middleware(ApiKeyHeaderMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://jntuhresults.dhethi.com",
-        "https://jntuhconnect.dhethi.com",
-        "https://dhethi.com",
+        "https://jntuk-results.vercel.app",
+        "https://jntuk-website.vercel.app",
+        "http://185.216.203.209:8088",
         "http://localhost:3000",
         "http://localhost:3001",
-    ],  # Allows all origins (Use specific domains in production)
+    ],
     allow_methods=["*"],  # Allows all HTTP methods
     allow_headers=["*"],  # Allows all headers
 )

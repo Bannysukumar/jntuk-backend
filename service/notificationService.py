@@ -14,7 +14,7 @@ from messaging.publisher import publish_message
 async def notification(
     page: int, category: str, regulation: str, degree: str, year: str, title: str
 ):
-    """Return paginated JNTUH result notifications, filterable by metadata.
+    """Return paginated JNTUK result notifications, filterable by metadata.
 
     Filters: `regulation`, `degree`, `year`, and a substring `title` are passed
     through to `get_notifications`. The `category` arg is a coarse gate — only
