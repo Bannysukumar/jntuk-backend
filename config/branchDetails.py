@@ -29,6 +29,11 @@ branch_details = {
     "73": "AI & ML",
     "74": "Computer Science and Design",
     "75": "Automation and Robotics",
+    "42": "CSE (Artificial Intelligence)",
+    "43": "Artificial Intelligence and Machine Learning",
+    "44": "CSE (Data Science)",
+    "45": "CSE (Cyber Security)",
+    "46": "CSE (Internet of Things)",
 }
 
 

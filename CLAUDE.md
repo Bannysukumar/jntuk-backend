@@ -70,6 +70,7 @@ Important optional groups:
 - Android push: `GOOGLE_APPLICATION_CREDENTIALS`, `FIREBASE_PROJECT_ID`, `FCM_RESULTS_TOPIC`
 - iOS push: `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, and either `APNS_PRIVATE_KEY` or `APNS_PRIVATE_KEY_PATH`
 - Class work: `CLASS_RESULTS_QUEUE_NAME`
+- Result scrape guards: `FRESHNESS_SCRAPE_EXPIRY`, `QUEUE_DEDUP_EXPIRY`, `FRESHNESS_QUEUE_MAX_MESSAGES`
 - Job sources: `JOB_ATS_BOARDS_JSON`
 
 Never commit `.env`, service-account JSON, APNs `.p8` files, private keys, access tokens, or real production identifiers. The current Compose file does not define MinIO. To use local object storage, run an S3-compatible service separately and point `S3_ENDPOINT_URL` at it; `utils/s3.py` creates the configured bucket lazily for custom endpoints.
@@ -81,9 +82,9 @@ All student result views derive from normalized attempts in PostgreSQL:
 1. Look up the view-specific Redis key.
 2. On cache miss, load the student and marks from PostgreSQL.
 3. If stored data exists, project it into the requested view and cache it.
-4. Only the consolidated academic-result DB-hit path currently schedules a background freshness scrape. Do not describe or implement every stored read as refreshing automatically.
+4. Only the consolidated academic-result DB-hit path currently schedules a background freshness scrape, and only when Redis has no `<rollNo>Freshness` key and the normal queue is below `FRESHNESS_QUEUE_MAX_MESSAGES`. Do not describe or implement every stored read as refreshing automatically.
 5. If no stored student exists, publish the roll number and return `202 Accepted`.
-6. The worker scrapes JNTUH, upserts normalized records, invalidates the main student keys, and notifies subscribers when new marks were inserted.
+6. The worker scrapes JNTUK, upserts normalized records, invalidates the main student keys, and notifies subscribers when new marks were inserted.
 
 Primary keys and TTLs:
 
@@ -95,11 +96,11 @@ When adding a result cache, update invalidation deliberately or document why TTL
 
 ## Scraping and grading invariants
 
-- `scrapers/serverChecker.py` probes the canonical JNTUH host and IP fallback. Redis key `url` stores the selected URL; `.` means neither is available.
-- `ResultScraper` selects payloads from the roll-number pattern and concurrently requests relevant exam codes.
+- `scrapers/serverChecker.py` probes the JNTUK results JSON API. Redis key `url` stores the selected URL; `.` means it is unavailable.
+- `ResultScraper` filters published JNTUK notifications and sequentially requests matching exam UUIDs with 429 backoff.
 - `mark` uniqueness includes student, semester, exam, subject, RCRV, and grace flags. Preserve regular, supplementary, RCRV, and grace attempts as distinct records.
 - Consolidated views choose the best attempt in `database/models.py`.
-- GPA calculation must use `utils.helpers.isbpharmacyr22()` everywhere the B.Pharm R22 table matters.
+- GPA calculation uses the JNTUK undergraduate table (`A+=10` … `E=5`). `COMPLETED` is not a backlog. Use `utils.helpers.isbpharmacyr22()` where the B.Pharm PCI table matters.
 - Use `utils.helpers.validateRollNo` for public roll-number inputs instead of reimplementing validation.
 
 ## Queue behavior
@@ -107,9 +108,9 @@ When adding a result cache, update invalidation deliberately or document why TTL
 - Normal queue: `QUEUE_NAME`; the publisher returns 429 only when the current count is greater than `RABBITMQ_MAX_MESSAGES` (4,000).
 - Class queue: `CLASS_RESULTS_QUEUE_NAME`, default `classresults`; the publisher refuses at `CLASS_RESULTS_QUEUE_MAX_MESSAGES` (3).
 - Class reads refuse work when the normal queue exceeds `RABBITMQ_CLASS_MAX_MESSAGES` (500) and publish a refresh only while it is below `RABBITMQ_CLASS_PUBLISH_MAX_MESSAGES` (50).
-- Worker prefetch is 2 for normal messages and 1 for class batches.
+- Worker prefetch is 1 for both normal messages and class batches so JNTUK is not hit concurrently.
 - Class batches stop after 20 consecutive empty roll numbers and set paired Redis suppression keys for 24 hours.
-- `RABBITMQ_ROLL_NUMBERS` is currently removed by the consumer but is not added by `messaging/publisher.py`; do not claim active Redis-set de-duplication without implementing both sides.
+- `messaging/publisher.py` claims `queued:<roll>` with `SET NX` and `SADD`s `RABBITMQ_ROLL_NUMBERS`; the consumer deletes both after the scrape. Hard refresh clears those keys plus `<roll>Freshness` before publishing.
 
 Class cohort pairing follows JNTUH admission-year/type rules implemented in both `messaging.consumer.get_class_prefixes()` and `service/getClassResults.py`. Do not simplify it to a literal `5↔A` character swap.
 

@@ -1,4 +1,4 @@
-# JNTUH Results BACKEND
+# JNTUK Results BACKEND
 
 <p align="center">
   <a href="https://github.com/ThilakReddyy/jntuh-backend/actions/workflows/deploy.yml"><img src="https://github.com/ThilakReddyy/jntuh-backend/actions/workflows/deploy.yml/badge.svg" alt="Deployment status"/></a>
@@ -9,7 +9,7 @@
 </p>
 
 
-This FastAPI-based service provides access to **student results, academic records, and backlog details**. It integrates with **PostgreSQL**, **Redis**, and **RabbitMQ** for efficient data handling and messaging.
+This FastAPI-based service provides access to **JNTUK student results, academic records, and backlog details** from [jntukresults.edu.in](https://jntukresults.edu.in/). It integrates with **PostgreSQL**, **Redis**, and **RabbitMQ** for efficient data handling and messaging.
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi&logoColor=white)

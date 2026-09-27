@@ -137,6 +137,34 @@ LATEST_NOTIFICATIONS_REDIS_KEY = "latest_notifications"
 CALENDARS_REDIS_KEY = "academic_calendars_tree"
 SYLLABUS_REDIS_KEY = "syllabus_tree"
 REDIS_URL_KEY = "url"
+JNTUK_RESULTS_PORTAL = os.getenv(
+    "JNTUK_RESULTS_PORTAL", "https://jntukresults.edu.in"
+)
+JNTUK_RESULTS_API_BASE = os.getenv(
+    "JNTUK_RESULTS_API_BASE",
+    "https://jntukresults.edu.in:2409/jntukresults",
+)
+JNTUK_NOTIFICATIONS_CACHE_KEY = "jntuk_results_notifications"
+HARD_REFRESH_KEY_SUFFIX = "HardRefresh"
+JNTUK_REQUEST_DELAY_SECONDS = _bounded_float_env(
+    "JNTUK_REQUEST_DELAY_SECONDS", 2.5, 0.5, 15.0
+)
+JNTUK_RATE_LIMIT_BACKOFF_SECONDS = _bounded_float_env(
+    "JNTUK_RATE_LIMIT_BACKOFF_SECONDS", 45.0, 5.0, 180.0
+)
+JNTUK_MAX_RETRIES = _bounded_int_env("JNTUK_MAX_RETRIES", 4, 1, 8)
+# Returning students are not re-queued for a freshness scrape more often
+# than this. 8k daily readers would otherwise enqueue 8k JNTUK jobs a day.
+FRESHNESS_SCRAPE_EXPIRY = _bounded_int_env(
+    "FRESHNESS_SCRAPE_EXPIRY", 21600, 600, 86400
+)
+QUEUE_DEDUP_EXPIRY = _bounded_int_env("QUEUE_DEDUP_EXPIRY", 3600, 300, 86400)
+QUEUE_DEDUP_KEY_PREFIX = "queued:"
+FRESHNESS_KEY_SUFFIX = "Freshness"
+# Background refreshes only trickle in while the worker is mostly idle.
+FRESHNESS_QUEUE_MAX_MESSAGES = _bounded_int_env(
+    "FRESHNESS_QUEUE_MAX_MESSAGES", 10, 1, 100
+)
 SEMESTERS = ["1-1", "1-2", "2-1", "2-2", "3-1", "3-2", "4-1", "4-2"]
 RABBITMQ_MAX_MESSAGES = 4000
 RABBITMQ_CLASS_MAX_MESSAGES = 500

@@ -93,10 +93,10 @@ def custom_openapi():
     """Generate and cache a custom OpenAPI schema for the FastAPI application."""
     if not app.openapi_schema:
         schema = get_openapi(
-            title="JNTUH RESULTS API",
+            title="JNTUK RESULTS API",
             version="0.1.0",
-            summary="API for retrieving student results and academic information",
-            description="The JNTUH Results API provides access to student records, including academic results, "
+            summary="API for retrieving JNTUK student results and academic information",
+            description="The JNTUK Results API provides access to student records, including academic results, "
             "backlog details, and overall performance summaries. This API is designed to streamline "
             "access to university result data in a structured format.",
             routes=app.routes,
@@ -184,9 +184,9 @@ mcp_http_client = httpx.AsyncClient(
 mcp = FastApiMCP(
     app,
     http_client=mcp_http_client,
-    name="JNTUH Results MCP",
+    name="JNTUK Results MCP",
     description=(
-        "MCP tools for querying JNTUH student academic data: full attempt history "
+        "MCP tools for querying JNTUK student academic data: full attempt history "
         "(getAllResult) vs the consolidated best-attempt mark sheet "
         "(getAcademicResult), backlogs, credits-vs-required-credits, two-student "
         "result contrast, class-wide results, grace-marks eligibility, and "

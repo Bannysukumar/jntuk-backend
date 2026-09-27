@@ -107,13 +107,13 @@ Actions:
 
 ## RabbitMQ queue saturation
 
-Normal publishing returns 429 when the current queue count is greater than 4,000. Class reads return 423 when normal queue depth is greater than 500. Class refresh publication is allowed only below 50 normal messages, and the dedicated class queue limit is 3.
+Normal publishing returns 429 when the current queue count is greater than 4,000. Duplicate roll numbers are not re-queued while `queued:<roll>` exists. Background academic freshness scrapes are skipped once the normal queue reaches `FRESHNESS_QUEUE_MAX_MESSAGES` (10). Class reads return 423 when normal queue depth is greater than 500. Class refresh publication is allowed only below 50 normal messages, and the dedicated class queue limit is 3. Do not run class scrapes during an 8k-user result-release peak.
 
 Actions:
 
 1. Check queue depth, unacknowledged messages, and consumers.
 2. Confirm the worker is healthy and connected to PostgreSQL/Redis.
-3. Check JNTUH availability; worker throughput depends on it.
+3. Check JNTUK availability; worker throughput depends on it. One student job is consumed at a time.
 4. Restore consumers or upstream access before changing thresholds.
 5. Let backpressure protect the upstream and database.
 

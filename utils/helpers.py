@@ -8,40 +8,65 @@ from utils.logger import telegram_logger
 import requests
 
 
+# JNTUK R16/R19/R20/R23 undergraduate scale. E is a passing grade.
 gradestogpa = {
     "O": 10,
-    "A+": 9,
-    "A": 8,
-    "B+": 7,
-    "B": 6,
-    "C": 5,
-    "D": 5,
-    "F": 0,
-    "Ab": 0,
-    "-": 0,
-    "P": 0,
-}
-gradestogpabppharamcyr22 = {
-    "O": 10,
+    "S": 10,
+    "A+": 10,
     "A": 9,
     "B": 8,
     "C": 7,
     "D": 6,
+    "E": 5,
     "F": 0,
     "Ab": 0,
+    "AB": 0,
+    "ABSENT": 0,
     "-": 0,
     "P": 0,
+    "COMPLETED": 0,
 }
+gradestogpabppharamcyr22 = {
+    "O": 10,
+    "A+": 10,
+    "A": 9,
+    "B": 8,
+    "C": 7,
+    "D": 6,
+    "E": 5,
+    "F": 0,
+    "Ab": 0,
+    "AB": 0,
+    "-": 0,
+    "P": 0,
+    "COMPLETED": 0,
+}
+FAILING_GRADES = {"F", "AB", "ABSENT", "-", "MP"}
+NON_CREDIT_PASS_GRADES = {"COMPLETED", "P", "SATISFACTORY"}
 
 
 def format_date(date: datetime) -> str:
     return date.strftime("%Y-%m-%d")
 
 
+def normalize_grade(grade: str | None) -> str:
+    return str(grade or "").strip()
+
+
+def is_failing_grade(grade: str | None) -> bool:
+    return normalize_grade(grade).upper() in FAILING_GRADES
+
+
+def is_non_credit_pass(grade: str | None) -> bool:
+    return normalize_grade(grade).upper() in NON_CREDIT_PASS_GRADES
+
+
 def getGradeValue(grade, bpharmacyr22):
-    if bpharmacyr22:
-        return gradestogpabppharamcyr22.get(grade, 0)
-    return gradestogpa.get(grade, 0)
+    normalized = normalize_grade(grade)
+    table = gradestogpabppharamcyr22 if bpharmacyr22 else gradestogpa
+    if normalized in table:
+        return table[normalized]
+    return table.get(normalized.upper(), 0)
 
 
 def isbpharmacyr22(roll_number):
@@ -52,9 +77,11 @@ def isbpharmacyr22(roll_number):
 
 
 def isGreat(previousGrade, grade):
-    previousGradeValue = gradestogpa.get(previousGrade, 0)  # Default to 1 if not found
-    gradeValue = gradestogpa.get(grade, 0)  # Default to 1 if not found
-    return previousGradeValue <= gradeValue
+    if is_failing_grade(previousGrade) and not is_failing_grade(grade):
+        return True
+    if not is_failing_grade(previousGrade) and is_failing_grade(grade):
+        return False
+    return getGradeValue(previousGrade, False) <= getGradeValue(grade, False)
 
 
 def validateRollNo(rollNumber: str = Query(..., min_length=10, max_length=10)):
@@ -102,60 +129,74 @@ def validateconstrastRollNos(
 
 
 def get_credit_regulation_details(roll_number: str):
+    from utils.jntuk import determine_degree, determine_regulation, is_lateral_entry
+
     credit_regulation_details = {
         "btech": {
-            "R18": {
-                "Regular": {
-                    "1": {"Required": "18", "Total": "37"},
-                    "2": {"Required": "47", "Total": "79"},
-                    "3": {"Required": "73", "Total": "123"},
-                    "4": {"Required": "160", "Total": "160"},
-                },
-                "Lateral": {
-                    "2": {"Required": "25", "Total": "42"},
-                    "3": {"Required": "51", "Total": "86"},
-                    "4": {"Required": "123", "Total": "123"},
-                },
-            },
-            "R22": {
+            "R16": {
                 "Regular": {
                     "1": {"Required": "20", "Total": "40"},
-                    "2": {"Required": "48", "Total": "80"},
-                    "3": {"Required": "72", "Total": "120"},
+                    "2": {"Required": "47", "Total": "82"},
+                    "3": {"Required": "73", "Total": "124"},
                     "4": {"Required": "160", "Total": "160"},
                 },
                 "Lateral": {
-                    "2": {"Required": "24", "Total": "40"},
-                    "3": {"Required": "48", "Total": "80"},
+                    "2": {"Required": "21", "Total": "42"},
+                    "3": {"Required": "51", "Total": "84"},
+                    "4": {"Required": "120", "Total": "120"},
+                },
+            },
+            "R19": {
+                "Regular": {
+                    "1": {"Required": "20", "Total": "40"},
+                    "2": {"Required": "47", "Total": "82"},
+                    "3": {"Required": "73", "Total": "124"},
+                    "4": {"Required": "160", "Total": "160"},
+                },
+                "Lateral": {
+                    "2": {"Required": "21", "Total": "42"},
+                    "3": {"Required": "51", "Total": "84"},
+                    "4": {"Required": "120", "Total": "120"},
+                },
+            },
+            "R20": {
+                "Regular": {
+                    "1": {"Required": "20", "Total": "40"},
+                    "2": {"Required": "57", "Total": "82"},
+                    "3": {"Required": "87", "Total": "124"},
+                    "4": {"Required": "160", "Total": "160"},
+                },
+                "Lateral": {
+                    "2": {"Required": "21", "Total": "42"},
+                    "3": {"Required": "59", "Total": "84"},
+                    "4": {"Required": "120", "Total": "120"},
+                },
+            },
+            "R23": {
+                "Regular": {
+                    "1": {"Required": "20", "Total": "40"},
+                    "2": {"Required": "57", "Total": "82"},
+                    "3": {"Required": "87", "Total": "124"},
+                    "4": {"Required": "160", "Total": "160"},
+                },
+                "Lateral": {
+                    "2": {"Required": "21", "Total": "42"},
+                    "3": {"Required": "59", "Total": "84"},
                     "4": {"Required": "120", "Total": "120"},
                 },
             },
         }
     }
 
-    # Ensure roll number is at least 10 characters long
-    if len(roll_number) < 10:
+    if len(roll_number) < 10 or determine_degree(roll_number) != "btech":
         return None
 
-    # Extract regulation and entry type
-    regulation_year = roll_number[:2]  # First two characters
-    entry_type = "Regular" if roll_number[4] == "1" else "Lateral"
-
-    # Ensure it belongs to the B.Tech regulation (R18 or R22)
-    if roll_number[5] != "A":  # Checking for 'A' at the 6th position
+    regulation_key = determine_regulation(roll_number)
+    entry_type = "Lateral" if is_lateral_entry(roll_number) else "Regular"
+    regulation_table = credit_regulation_details["btech"].get(regulation_key)
+    if regulation_table is None:
         return None
-
-    # Determine regulation key
-    if (int(regulation_year) >= 18 and int(regulation_year) < 22) or (
-        regulation_year == "22" and entry_type == "Lateral"
-    ):
-        regulation_key = "R18"
-    elif int(regulation_year) >= 22:
-        regulation_key = "R22"
-    else:
-        return None  # Unsupported regulation
-
-    return credit_regulation_details["btech"][regulation_key][entry_type]
+    return regulation_table[entry_type]
 
 
 def send_telegram_notification(data):
@@ -163,16 +204,9 @@ def send_telegram_notification(data):
         for item in data:
             message = "<b>🚨 Results have been Released! 🚨</b>\n\n"
 
-            second_link = "http://202.63.105.184/results/" + "/".join(
-                item["link"].split("/")[3:]
-            )
-
             message += f"<b>🎓 {item['title']}</b>\n\n"
             message += (
-                f'<b>🔗 Result Link 1:</b> <a href="{item["link"]}">Click Here</a>\n'
-            )
-            message += (
-                f'<b>🔗 Result Link 2:</b> <a href="{second_link}">Click Here</a>\n\n'
+                f'<b>🔗 Result Link:</b> <a href="{item["link"]}">Click Here</a>\n\n'
             )
             message += f"<b>📅 Released Date:</b> {item['releaseDate']}\n\n"
 
@@ -181,7 +215,7 @@ def send_telegram_notification(data):
                 "- Telegram: @thilak_reddy \n"
                 "- Instagram:<a href='https://www.instagram.com/__thilak_reddy__/'>@__thilak_reddy__</a>  \n"
                 '- Email: <a href="mailto:thilakreddypothuganti@gmail.com">thilakreddypothuganti@gmail.com</a>\n\n'
-                "🌐 <b>More info:</b> <a href='https://jntuhconnect.dhethi.com/notifications'>jntuhconnect.dhethi.com</a>"
+                "🌐 <b>More info:</b> <a href='https://jntukresults.edu.in/'>jntukresults.edu.in</a>"
             )
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
             payload = {

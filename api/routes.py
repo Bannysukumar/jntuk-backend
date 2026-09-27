@@ -193,7 +193,8 @@ def create_routes(app: FastAPI):
         summary="Side-by-side comparison of two students",
         description=(
             "Side-by-side comparison of EXACTLY TWO students' consolidated results. "
-            "Returns each student's profile (name, college code, father name, CGPA, "
+            "Returns each student's profile (name, hall ticket, college code, "
+            "college name, father name, CGPA, "
             "backlogs, credits) plus a per-semester comparison row (SGPA, credits, "
             "grades, backlogs, failed flag) — semesters one student doesn't have are "
             "filled with `-` placeholders. Both roll numbers are validated and each "
@@ -344,8 +345,8 @@ def create_routes(app: FastAPI):
         description=(
             "Returns results for an ENTIRE class section, derived from the first 8 "
             "characters of the supplied roll number. Internally also looks up the "
-            "paired day/evening cohort by swapping the 5th char (rule: `5↔A` per "
-            "JNTUH roll convention). The `type` query parameter selects the view "
+            "paired regular/lateral cohort by the `1↔5` admission-year rule. "
+            "The `type` query parameter selects the view "
             "rendered for each student: `academicresult` (default) → consolidated "
             "mark sheet (same shape as getAcademicResult), `allresult` → full attempt "
             "history (same as getAllResult), `backlog` → backlogs-only (same as "

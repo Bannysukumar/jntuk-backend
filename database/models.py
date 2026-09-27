@@ -1,16 +1,22 @@
-from typing import Any, List, Literal, TypedDict
-from prisma.models import student, mark
+from __future__ import annotations
+
+from typing import Any, List, Literal, TypedDict, TYPE_CHECKING
 from pydantic import BaseModel, field_validator, model_validator
 
+if TYPE_CHECKING:
+    from prisma.models import student, mark
+
 from config.branchDetails import get_branch_name
+from config.collegeDetails import get_college_name
 from config.settings import SEMESTERS
-from utils.helpers import getGradeValue, isGreat
+from utils.helpers import getGradeValue, isGreat, is_failing_grade
 
 
 class StudentDetails(TypedDict):
     name: str
     rollNumber: str
     collegeCode: str
+    collegeName: str
     fatherName: str
     branch: str
 
@@ -103,6 +109,7 @@ def studentDetailsModel(details: student) -> StudentDetails:
         "name": details.name,
         "rollNumber": details.rollNumber,
         "collegeCode": details.collegeCode,
+        "collegeName": get_college_name(details.rollNumber),
         "fatherName": details.fatherName,
         "branch": get_branch_name(details.rollNumber),
     }
@@ -192,7 +199,7 @@ def processResults(results: List[mark], bpharmacyR22):
             subject_credits = subject["credits"]
             semester_grades += grade_value * subject_credits
             semester_credits += subject_credits
-            backlogs += int(grade_value == 0)
+            backlogs += int(is_failing_grade(subject["grades"]))
 
         final_result[semester] = {
             "semester": semester,
@@ -282,8 +289,7 @@ def studentBacklogs(results: List[mark], bpharmacyR22):
         if sem["backlogs"] >= 1.0:
             backlogSubjects = []
             for subject in sem["subjects"]:
-                grade_value = getGradeValue(subject["grades"], bpharmacyR22)
-                if grade_value == 0:
+                if is_failing_grade(subject["grades"]):
                     backlogSubjects.append(subject)
             sem["subjects"] = backlogSubjects
             backlogs_data.append(sem)
@@ -302,6 +308,9 @@ def studentResultContrast(result1, result2):
         "name": result1["details"]["name"],
         "rollNumber": result1["details"]["rollNumber"],
         "collegeCode": result1["details"]["collegeCode"],
+        "collegeName": result1["details"].get(
+            "collegeName", get_college_name(result1["details"]["rollNumber"])
+        ),
         "fatherName": result1["details"]["fatherName"],
         "CGPA": result1["results"]["CGPA"],
         "backlogs": result1["results"]["backlogs"],
@@ -312,6 +321,9 @@ def studentResultContrast(result1, result2):
         "name": result2["details"]["name"],
         "rollNumber": result2["details"]["rollNumber"],
         "collegeCode": result2["details"]["collegeCode"],
+        "collegeName": result2["details"].get(
+            "collegeName", get_college_name(result2["details"]["rollNumber"])
+        ),
         "fatherName": result2["details"]["fatherName"],
         "CGPA": result2["results"]["CGPA"],
         "backlogs": result2["results"]["backlogs"],

@@ -5,7 +5,7 @@ from config.redisConnection import redisConnection
 from scrapers.serverChecker import check_valid_url_in_redis
 from utils.helpers import isbpharmacyr22
 from utils.logger import redis_logger
-from config.settings import EXPIRY_TIME
+from config.settings import EXPIRY_TIME, FRESHNESS_KEY_SUFFIX
 from database.models import (
     studentDetailsModel,
     studentResultsModel,
@@ -30,8 +30,10 @@ async def fetch_results(app: FastAPI, roll_number: str):
 
     Caching: Redis key `<rollNo>Results` for `EXPIRY_TIME` seconds. The cached
     payload is augmented with a live `serverStatus` flag derived from
-    `check_valid_url_in_redis` before returning. Falls back to a queued scrape
-    via `publish_message` on cache+DB miss.
+    `check_valid_url_in_redis` before returning. A database hit may trickle a
+    background freshness scrape at most once per `FRESHNESS_SCRAPE_EXPIRY`, and
+    only while the normal queue is short. Falls back to a queued scrape via
+    `publish_message` on cache+DB miss.
     """
 
     roll_results_key = f"{roll_number}Results"
@@ -62,7 +64,9 @@ async def fetch_results(app: FastAPI, roll_number: str):
 
         result["serverStatus"] = url != "."
 
-        await publish_message(app, roll_number)
+        freshness_key = f"{roll_number}{FRESHNESS_KEY_SUFFIX}"
+        if redisConnection.client and not redisConnection.client.get(freshness_key):
+            await publish_message(app, roll_number, freshness=True)
 
         return JSONResponse(status_code=status.HTTP_200_OK, content=result)
 

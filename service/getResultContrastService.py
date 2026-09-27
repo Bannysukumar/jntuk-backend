@@ -15,7 +15,7 @@ from messaging.publisher import publish_message
 async def fetch_result_contrast(app: FastAPI, roll_number_1: str, roll_number_2: str):
     """Side-by-side comparison of EXACTLY TWO students' consolidated results.
 
-    For each student returns a profile (name, college code, father name, CGPA,
+    For each student returns a profile (name, hall ticket, college code, college name, father name, CGPA,
     backlogs, credits) plus a per-semester comparison row (SGPA, credits, grades,
     backlogs, failed flag). Semesters that exist for one student but not the
     other are filled with `-` placeholders so both columns line up. Both

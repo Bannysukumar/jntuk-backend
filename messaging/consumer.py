@@ -8,7 +8,9 @@ from config.redisConnection import redisConnection
 from config.settings import (
     CLASS_RESULTS_PROCESSED_EXPIRY_TIME,
     CLASS_RESULTS_QUEUE_NAME,
+    HARD_REFRESH_KEY_SUFFIX,
     NOTIFICATIONS_REDIS_KEY,
+    QUEUE_DEDUP_KEY_PREFIX,
     QUEUE_NAME,
     RABBITMQ_URL,
     RABBITMQ_ROLL_NUMBERS,
@@ -114,9 +116,23 @@ async def process_message(message_body: str) -> bool:
             rabbitmq_logger.warning("No url found, skipping processing...")
             return False
 
-        # get exam codes present in database
-        exam_codes = await get_exam_codes_from_database(message_body)
-        exam_codes_rcrv = await get_exam_codes_from_database(message_body, True)
+        force_refresh = False
+        if redisConnection.client:
+            hard_refresh_key = f"{message_body}{HARD_REFRESH_KEY_SUFFIX}"
+            force_refresh = bool(redisConnection.client.get(hard_refresh_key))
+            if force_refresh:
+                redisConnection.client.delete(hard_refresh_key)
+
+        exam_codes = (
+            set()
+            if force_refresh
+            else await get_exam_codes_from_database(message_body)
+        )
+        exam_codes_rcrv = (
+            set()
+            if force_refresh
+            else await get_exam_codes_from_database(message_body, True)
+        )
 
         # intializeing the scraper
         scraper = ResultScraper(message_body, exam_codes, exam_codes_rcrv, url)
@@ -160,19 +176,22 @@ async def _consume_default_queue(queue) -> None:
             try:
                 async with message.process():
                     body = message.body.decode()
-                    # Remove the roll number from Redis after successful processing
-                    if redisConnection.client:
-                        redisConnection.client.srem(RABBITMQ_ROLL_NUMBERS, body)
-                        rabbitmq_logger.info(
-                            f"Removed roll number {body} from Redis."
-                        )
-                    else:
-                        rabbitmq_logger.warning("Redis is not found")
 
                     if body == NOTIFICATIONS_REDIS_KEY:
                         await refresh_notifications()
                     else:
                         await process_message(body)
+
+                    if redisConnection.client:
+                        redisConnection.client.srem(RABBITMQ_ROLL_NUMBERS, body)
+                        redisConnection.client.delete(
+                            f"{QUEUE_DEDUP_KEY_PREFIX}{body}"
+                        )
+                        rabbitmq_logger.info(
+                            f"Removed roll number {body} from Redis."
+                        )
+                    else:
+                        rabbitmq_logger.warning("Redis is not found")
 
             except Exception as error:
                 rabbitmq_logger.error(
@@ -213,7 +232,7 @@ async def consume_messages():
             channel = await connection.channel()
             class_results_channel = await connection.channel()
 
-            await channel.set_qos(prefetch_count=2)
+            await channel.set_qos(prefetch_count=1)
             # Only one class batch may run at a time. Each batch also awaits
             # every individual roll number before starting the next one.
             await class_results_channel.set_qos(prefetch_count=1)

@@ -80,23 +80,17 @@ def test_refresh_broadcasts_only_newly_saved_exams():
     new_exams = [
         {
             "title": "New result",
-            "link": "https://results.jntuh.ac.in/new-result",
+            "link": "https://jntukresults.edu.in/results?resultId=new",
+            "examCode": "new",
+            "date": "2026-01-01",
         }
     ]
     broadcast = AsyncMock()
 
     with (
         patch(
-            "scrapers.resultNotificationScraper.fetch_results",
-            return_value=[object()],
-        ),
-        patch(
-            "scrapers.resultNotificationScraper.parse_results",
-            return_value=new_exams,
-        ),
-        patch(
-            "scrapers.resultNotificationScraper.format_dates",
-            return_value=new_exams,
+            "scrapers.resultNotificationScraper.fetch_notifications",
+            new=AsyncMock(return_value=new_exams),
         ),
         patch(
             "scrapers.resultNotificationScraper.get_exam_codes",

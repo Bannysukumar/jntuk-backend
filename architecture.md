@@ -2,12 +2,12 @@
 
 ## Purpose and scope
 
-This repository is primarily a student-results retrieval system for JNTUH. It gives clients a stable API over unreliable upstream result servers by combining a read-through cache, a persistent result store, and asynchronous scraping. The same application also exposes related academic views, result-release notifications, grace-marks workflows, academic content, fresher jobs, and a bounded chatbot.
+This repository is primarily a student-results retrieval system for JNTUK. It gives clients a stable API over the official results portal by combining a read-through cache, a persistent result store, and asynchronous scraping. The same application also exposes related academic views, result-release notifications, grace-marks workflows, academic content, fresher jobs, and a bounded chatbot.
 
 The implementation is a modular monolith deployed as two cooperating Python processes:
 
 - The FastAPI process in `main.py` accepts HTTP and MCP requests, serves cached or stored results, publishes scrape work, and runs periodic notification and job refresh tasks.
-- The RabbitMQ worker in `main2.py` calls `messaging.consumer.consume_messages()`, scrapes JNTUH result servers, writes result records, invalidates caches, and sends result-ready notifications.
+- The RabbitMQ worker in `main2.py` calls `messaging.consumer.consume_messages()`, scrapes JNTUK result servers, writes result records, invalidates caches, and sends result-ready notifications.
 
 Both processes share PostgreSQL, Redis, and RabbitMQ. The `Dockerfile` starts both processes in one application container in the current deployment model, although they are logically independent and can be run separately during development.
 
@@ -22,7 +22,7 @@ flowchart LR
     api <--> postgres[(PostgreSQL)]
     api --> rabbit[(RabbitMQ)]
     rabbit --> worker[Result worker process]
-    worker --> jntuh[JNTUH result servers]
+    worker --> jntuk[JNTUK result portal]
     worker --> postgres
     worker --> redis
     worker --> push[Web Push, FCM, and APNs]
@@ -55,10 +55,10 @@ The API also mounts a read-only FastApiMCP application at `/mcp`. MCP operations
 
 `main2.py` runs the consumer independently of FastAPI. It creates its own RabbitMQ, Prisma, and Redis connections and consumes two durable queues concurrently:
 
-- `QUEUE_NAME` is the normal per-student scrape queue, with a prefetch count of 2. The special `notificationsi` message triggers a notification refresh instead of a student scrape.
+- `QUEUE_NAME` is the normal per-student scrape queue, with a prefetch count of 1. The special `notificationsi` message triggers a notification refresh instead of a student scrape.
 - `CLASS_RESULTS_QUEUE_NAME` is the class batch queue, with a prefetch count of 1. A batch walks the requested and paired admission cohorts, stopping after 20 consecutive empty roll numbers and suppressing another batch for the same class for 24 hours via Redis.
 
-For a student message, the worker finds a reachable JNTUH result host, loads already-known exam codes from PostgreSQL, runs `ResultScraper`, upserts the student/subject/mark data, invalidates the student's derived Redis entries, and sends notifications when new marks were inserted.
+For a student message, the worker finds a reachable JNTUK result host, loads already-known exam codes from PostgreSQL, runs `ResultScraper`, upserts the student/subject/mark data, invalidates the student's derived Redis entries, and sends notifications when new marks were inserted.
 
 ### Shared infrastructure
 
@@ -87,8 +87,8 @@ flowchart TD
     db -->|No| queue
     queue --> accepted[Return 202 queued]
     queue --> worker[Result worker]
-    worker --> upstream[JNTUH result servers]
-    upstream --> scraper[Parse and normalize exam attempts]
+    worker --> upstream[JNTUK result portal]
+    upstream --> scraper[Parse and normalize published exam attempts]
     scraper --> persist[Upsert students, subjects, and marks]
     persist --> postgres[(PostgreSQL)]
     persist --> invalidate[Invalidate student result caches]
@@ -111,7 +111,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant MQ as RabbitMQ
     participant Worker as Result worker
-    participant JNTUH as JNTUH servers
+    participant JNTUH as JNTUK portal
 
     Client->>API: GET result view with validated roll number
     API->>Redis: Read view-specific cache key
@@ -124,7 +124,7 @@ sequenceDiagram
             DB-->>API: Raw attempt records
             API->>API: Build requested derived view
             API->>Redis: Cache derived response with TTL
-            opt Consolidated academic-result view
+            opt Consolidated academic-result view, idle queue, and no freshness key
                 API->>MQ: Queue background freshness scrape
             end
             API-->>Client: 200 result
@@ -132,7 +132,7 @@ sequenceDiagram
             API->>MQ: Queue roll number
             API-->>Client: 202 queued
             MQ->>Worker: Deliver roll number
-            Worker->>JNTUH: Scrape applicable exam codes concurrently
+            Worker->>JNTUH: Look up published JNTUK exam UUIDs
             JNTUH-->>Worker: Student and subject results
             Worker->>DB: Upsert student, subjects, and marks
             Worker->>Redis: Invalidate derived result keys
@@ -145,7 +145,7 @@ Each result view is derived from the same normalized mark attempts:
 
 | View | Redis key | Behavior |
 | --- | --- | --- |
-| Consolidated academic result | `<rollNo>Results` | Keeps the best grade per subject and calculates SGPA, CGPA, credits, and backlogs. A database hit also schedules a freshness scrape. |
+| Consolidated academic result | `<rollNo>Results` | Keeps the best grade per subject and calculates SGPA, CGPA, credits, and backlogs. A database hit may trickle a freshness scrape when Redis has no `<rollNo>Freshness` key and the normal queue is below `FRESHNESS_QUEUE_MAX_MESSAGES`. |
 | Complete attempt history | `<rollNo>ALL` | Groups every regular, supplementary, RCRV, and grace attempt without collapsing attempts. |
 | Backlogs | `<rollNo>Backlogs` | Consolidates attempts, then returns subjects whose best grade remains `F` or `Ab`. |
 | Required credits | `<rollNo>RequiredCredits` | Compares earned credits with the hard-coded B.Tech regulation and entry-type thresholds. |
@@ -156,19 +156,19 @@ The first four student keys expire after 1,200 seconds and are deleted together 
 
 ### Scraping and persistence
 
-`scrapers.serverChecker` probes the canonical JNTUH results host and an IP fallback. The selected base URL is cached in Redis under `url`; `.` is the sentinel that both upstreams are unavailable. The normal publisher returns HTTP 424 instead of enqueueing when this sentinel is present.
+`scrapers.serverChecker` probes the JNTUK results JSON API (`jntukresults.edu.in:2409`). The selected base URL is cached in Redis under `url`; `.` is the sentinel that the upstream is unavailable. The normal publisher returns HTTP 424 instead of enqueueing when this sentinel is present.
 
-`ResultScraper` selects request payloads from the roll-number degree pattern and fans out `aiohttp` requests for relevant exam codes. Previously persisted exam codes prevent unnecessary requests. Parsed data is normalized into:
+`ResultScraper` loads the published notification list, keeps exams that match the student's degree and regulation, and looks up each remaining UUID sequentially with rate-limit backoff. Previously persisted exam UUIDs are skipped unless a hard refresh cleared that omit set. Parsed data is normalized into:
 
 - `student`: one row per unique roll number.
 - `subject`: one row per unique subject code.
 - `mark`: one row per student, semester, exam, subject, RCRV flag, and grace-marks flag.
 
-The API response models in `database/models.py` transform these raw attempts. Consolidated GPA calculations use the standard grade table or the B.Pharm R22 table selected by `utils.helpers.isbpharmacyr22()`.
+The API response models in `database/models.py` transform these raw attempts. Consolidated GPA calculations use the JNTUK undergraduate table (`A+=10` … `E=5`, `F=0`). `COMPLETED` and other non-credit passes are not backlogs. B.Pharm PCI still uses `utils.helpers.isbpharmacyr22()` where that table matters. Student details always include the hall ticket (`rollNumber`). College name is not on the JNTUK results API; it is derived from characters 3–4 of the hall ticket via `config/collegeDetails.py`.
 
 ### Backpressure and class refresh
 
-The normal queue rejects new work after `RABBITMQ_MAX_MESSAGES` (4,000). A class request first refuses work when the normal queue exceeds `RABBITMQ_CLASS_MAX_MESSAGES` (500), and only schedules a class refresh while the normal queue is below `RABBITMQ_CLASS_PUBLISH_MAX_MESSAGES` (50). The dedicated class queue itself accepts at most `CLASS_RESULTS_QUEUE_MAX_MESSAGES` (3).
+The normal queue rejects first-time/hard-refresh work after `RABBITMQ_MAX_MESSAGES` (4,000). Freshness scrapes are skipped once the queue reaches `FRESHNESS_QUEUE_MAX_MESSAGES` (10). The publisher also claims `queued:<roll>` with Redis `SET NX` and records the roll in `RABBITMQ_ROLL_NUMBERS`; the consumer clears both after the job. A class request first refuses work when the normal queue exceeds `RABBITMQ_CLASS_MAX_MESSAGES` (500), and only schedules a class refresh while the normal queue is below `RABBITMQ_CLASS_PUBLISH_MAX_MESSAGES` (50). The dedicated class queue itself accepts at most `CLASS_RESULTS_QUEUE_MAX_MESSAGES` (3). Class scrapes remain unsafe at 8k-user peak — they walk hundreds of roll numbers against a rate-limited portal.
 
 The class response is built immediately from matching PostgreSQL records. If records exist and load permits it, a background batch refresh is published. The worker serially probes generated roll numbers across the regular and lateral-entry paired cohorts.
 

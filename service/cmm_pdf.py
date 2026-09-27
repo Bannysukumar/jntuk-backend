@@ -21,14 +21,16 @@ QUIET_MODULES = 10
 BARCODE_CHARSET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 GRADE_POINTS = {
     "O": 10,
-    "A+": 9,
-    "A": 8,
-    "B+": 7,
-    "B": 6,
-    "C": 5,
-    "D": 5,
+    "S": 10,
+    "A+": 10,
+    "A": 9,
+    "B": 8,
+    "C": 7,
+    "D": 6,
+    "E": 5,
     "F": 0,
     "AB": 0,
+    "COMPLETED": 0,
     "-": "-",
 }
 
@@ -146,11 +148,11 @@ def barcode(c, x, y, width, height, seed=0, value=None):
 
 
 def header(c, details, results):
-    seal(c, 54, 790, 27, "JNTUH")
+    seal(c, 54, 790, 27, "JNTUK")
     seal(c, 558, 790, 30, "SAMPLE")
     fit(
         c,
-        "JAWAHARLAL NEHRU TECHNOLOGICAL UNIVERSITY HYDERABAD",
+        "JAWAHARLAL NEHRU TECHNOLOGICAL UNIVERSITY KAKINADA",
         95,
         812,
         422,
@@ -160,7 +162,7 @@ def header(c, details, results):
     )
     fit(
         c,
-        "HYDERABAD - 500 085, TELANGANA STATE, INDIA",
+        "KAKINADA - 533 003, ANDHRA PRADESH, INDIA",
         132,
         796,
         348,
@@ -183,7 +185,17 @@ def header(c, details, results):
         ("Name", details.get("name", "")),
         ("Hall Ticket No.", details.get("rollNumber", "")),
         ("Father Name", details.get("fatherName", "")),
-        ("College Code", details.get("collegeCode", "")),
+        (
+            "College",
+            " — ".join(
+                part
+                for part in (
+                    str(details.get("collegeCode") or "").strip(),
+                    str(details.get("collegeName") or "").strip(),
+                )
+                if part
+            ),
+        ),
     ]
     for idx, (label, value) in enumerate(rows):
         yy = 735 - idx * 15

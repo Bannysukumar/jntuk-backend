@@ -21,9 +21,9 @@ async def fetch_class_results(app: FastAPI, roll_number: str, type: str):
     """Return results for an ENTIRE class section, derived from one roll number.
 
     The class is identified by the first 8 characters of the supplied roll
-    number; internally the function also resolves the paired day/evening cohort
-    by swapping the 5th char (rule: `5↔A` per JNTUH roll convention) so both
-    cohorts appear in the response. The `type` parameter selects which
+    number; internally the function also resolves the paired regular/lateral
+    cohort (`1↔5` with the admission-year shift) so both cohorts appear in
+    the response. The `type` parameter selects which
     per-student view is rendered:
 
     - `academicresult` (default) → consolidated mark sheet (same shape as
