@@ -119,3 +119,21 @@ def test_non_empty_result_resets_consecutive_empty_roll_count():
 
     assert process.await_count == 40
     assert process.await_args_list[-1] == call("18E51A0440")
+
+
+def test_process_class_results_message_stops_when_jntuk_is_rate_limited():
+    process = AsyncMock(return_value=True)
+    redis_client = SimpleNamespace(
+        exists=MagicMock(return_value=False),
+        set=MagicMock(),
+    )
+
+    with (
+        patch("messaging.consumer.process_message", new=process),
+        patch("messaging.consumer.jntuk_circuit_ttl", return_value=120),
+        patch.object(redisConnection, "client", redis_client),
+    ):
+        asyncio.run(process_class_results_message("18E51A0479"))
+
+    process.assert_not_awaited()
+    redis_client.set.assert_not_called()

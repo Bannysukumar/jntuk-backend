@@ -314,6 +314,58 @@ def test_scraper_skips_known_exams_and_empty_lookups():
     assert result["results"][0]["semesterCode"] == "3-1"
 
 
+def test_scraper_keeps_partial_results_after_rate_limit():
+    scraper = ResultScraper(
+        "226Q1A4304",
+        omit_exam_codes=set(),
+        omit_rcrv_exam_codes=set(),
+        url="https://jntuk.example/jntukresults",
+    )
+
+    async def fake_notifications(url=None, use_cache=True):
+        return [
+            {
+                "uuid": "ok-id",
+                "course": "BTECH",
+                "exam_details": "III B.Tech II Sem (R20) Regular",
+                "year_semistore": "III-II",
+            },
+            {
+                "uuid": "rate-id",
+                "course": "BTECH",
+                "exam_details": "III B.Tech I Sem (R20) Regular",
+                "year_semistore": "III-I",
+            },
+        ]
+
+    async def fake_student_results(roll, result_id, url=None, session=None):
+        from scrapers.jntukClient import JntukRateLimitedError
+
+        if result_id == "rate-id":
+            raise JntukRateLimitedError("JNTUK rate-limited")
+        return {
+            "status": 200,
+            "data": [
+                {
+                    "htno": roll,
+                    "subcode": "R2032421",
+                    "subname": "COMPUTER NETWORKS",
+                    "credits": "3",
+                    "grade": "E",
+                }
+            ],
+        }
+
+    with (
+        patch("scrapers.resultScraper.fetch_notifications", new=fake_notifications),
+        patch("scrapers.resultScraper.fetch_student_results", new=fake_student_results),
+    ):
+        result = asyncio.run(scraper.run())
+
+    assert result is not None
+    assert [exam["examCode"] for exam in result["results"]] == ["ok-id"]
+
+
 def _queued_response(_app, roll_number, *args, **kwargs):
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,

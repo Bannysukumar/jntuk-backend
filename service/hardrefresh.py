@@ -7,6 +7,7 @@ from config.settings import (
     HARD_REFRESH_KEY_SUFFIX,
     QUEUE_DEDUP_KEY_PREFIX,
     RABBITMQ_ROLL_NUMBERS,
+    SCRAPE_FAIL_COOLDOWN_PREFIX,
 )
 from messaging.publisher import publish_message
 from utils.caching import invalidate_all_cache
@@ -18,6 +19,7 @@ async def fetch_results_using_hard_refresh(app: FastAPI, roll_number: str):
         redisConnection.client.delete(
             f"{roll_number}{FRESHNESS_KEY_SUFFIX}",
             f"{QUEUE_DEDUP_KEY_PREFIX}{roll_number}",
+            f"{SCRAPE_FAIL_COOLDOWN_PREFIX}{roll_number}",
         )
         redisConnection.client.srem(RABBITMQ_ROLL_NUMBERS, roll_number)
         redisConnection.client.set(

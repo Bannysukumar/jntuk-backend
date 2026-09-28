@@ -14,6 +14,7 @@ from config.settings import (
     QUEUE_NAME,
     RABBITMQ_MAX_MESSAGES,
     RABBITMQ_ROLL_NUMBERS,
+    SCRAPE_FAIL_COOLDOWN_PREFIX,
 )
 from scrapers.serverChecker import check_valid_url_in_redis
 from utils.logger import rabbitmq_logger
@@ -101,6 +102,14 @@ async def publish_message(
                 )
 
             if redisConnection.client and rollNo != NOTIFICATIONS_REDIS_KEY:
+                if redisConnection.client.get(
+                    f"{SCRAPE_FAIL_COOLDOWN_PREFIX}{rollNo}"
+                ):
+                    rabbitmq_logger.info(
+                        f"Skipping queue publish for {rollNo}; "
+                        "recent scrape failed and is cooling down"
+                    )
+                    return _queued_accepted()
                 queued_key = f"{QUEUE_DEDUP_KEY_PREFIX}{rollNo}"
                 claimed = redisConnection.client.set(
                     queued_key, "1", nx=True, ex=QUEUE_DEDUP_EXPIRY

@@ -11,9 +11,10 @@ import requests
 
 from config.redisConnection import redisConnection
 from config.settings import (
+    JNTUK_CIRCUIT_EXPIRY,
+    JNTUK_CIRCUIT_KEY,
     JNTUK_MAX_RETRIES,
     JNTUK_NOTIFICATIONS_CACHE_KEY,
-    JNTUK_RATE_LIMIT_BACKOFF_SECONDS,
     JNTUK_REQUEST_DELAY_SECONDS,
     JNTUK_RESULTS_API_BASE,
     NOTIFICATIONS_EXPIRY_TIME,
@@ -31,6 +32,31 @@ _last_request_at = 0.0
 
 def _api_base(url: str | None = None) -> str:
     return (url or JNTUK_RESULTS_API_BASE).rstrip("/")
+
+
+def trip_jntuk_circuit() -> None:
+    """Pause further JNTUK calls after a 429 so the worker stops hammering."""
+    if redisConnection.client:
+        redisConnection.client.set(JNTUK_CIRCUIT_KEY, "1", ex=JNTUK_CIRCUIT_EXPIRY)
+
+
+def jntuk_circuit_ttl() -> int:
+    client = redisConnection.client
+    if not client or not hasattr(client, "ttl"):
+        return -2
+    try:
+        return int(client.ttl(JNTUK_CIRCUIT_KEY))
+    except (TypeError, ValueError):
+        return -2
+
+
+async def _wait_for_circuit() -> None:
+    while True:
+        ttl = jntuk_circuit_ttl()
+        if ttl <= 0:
+            return
+        scraping_logger.warning(f"JNTUK circuit open; waiting {ttl}s")
+        await asyncio.sleep(min(ttl, 15))
 
 
 async def _wait_for_slot() -> None:
@@ -59,6 +85,7 @@ async def post_json(
 
     try:
         for attempt in range(JNTUK_MAX_RETRIES):
+            await _wait_for_circuit()
             await _wait_for_slot()
             try:
                 async with session.post(
@@ -81,12 +108,12 @@ async def post_json(
 
             status = parsed.get("status", 0)
             if status == 429 or "too many requests" in str(parsed.get("message", "")).lower():
+                trip_jntuk_circuit()
                 scraping_logger.warning(
-                    f"JNTUK rate-limited {endpoint}; backing off "
-                    f"{JNTUK_RATE_LIMIT_BACKOFF_SECONDS}s"
+                    f"JNTUK rate-limited {endpoint}; opening circuit "
+                    f"{JNTUK_CIRCUIT_EXPIRY}s"
                 )
-                await asyncio.sleep(JNTUK_RATE_LIMIT_BACKOFF_SECONDS)
-                continue
+                raise JntukRateLimitedError(f"JNTUK rate-limited {endpoint}")
             return parsed
 
         if last_error is not None:

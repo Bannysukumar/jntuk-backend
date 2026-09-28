@@ -97,7 +97,7 @@ When adding a result cache, update invalidation deliberately or document why TTL
 ## Scraping and grading invariants
 
 - `scrapers/serverChecker.py` probes the JNTUK results JSON API. Redis key `url` stores the selected URL; `.` means it is unavailable.
-- `ResultScraper` filters published JNTUK notifications and sequentially requests matching exam UUIDs with 429 backoff.
+- `ResultScraper` filters published JNTUK notifications and sequentially requests matching exam UUIDs. A 429 opens a 3-minute circuit, stops remaining lookups for that student, and keeps any exams already fetched.
 - `mark` uniqueness includes student, semester, exam, subject, RCRV, and grace flags. Preserve regular, supplementary, RCRV, and grace attempts as distinct records.
 - Consolidated views choose the best attempt in `database/models.py`.
 - GPA calculation uses the JNTUK undergraduate table (`A+=10` … `E=5`). `COMPLETED` is not a backlog. Use `utils.helpers.isbpharmacyr22()` where the B.Pharm PCI table matters.
@@ -108,9 +108,9 @@ When adding a result cache, update invalidation deliberately or document why TTL
 - Normal queue: `QUEUE_NAME`; the publisher returns 429 only when the current count is greater than `RABBITMQ_MAX_MESSAGES` (4,000).
 - Class queue: `CLASS_RESULTS_QUEUE_NAME`, default `classresults`; the publisher refuses at `CLASS_RESULTS_QUEUE_MAX_MESSAGES` (3).
 - Class reads refuse work when the normal queue exceeds `RABBITMQ_CLASS_MAX_MESSAGES` (500) and publish a refresh only while it is below `RABBITMQ_CLASS_PUBLISH_MAX_MESSAGES` (50).
-- Worker prefetch is 1 for both normal messages and class batches so JNTUK is not hit concurrently.
+- Worker prefetch is 1 for both queues. Class and student scrapes also share an in-process lock so they cannot call JNTUK at the same time. Class batches pause while the normal queue has ready messages and abort without suppression keys if the JNTUK 429 circuit is open.
 - Class batches stop after 20 consecutive empty roll numbers and set paired Redis suppression keys for 24 hours.
-- `messaging/publisher.py` claims `queued:<roll>` with `SET NX` and `SADD`s `RABBITMQ_ROLL_NUMBERS`; the consumer deletes both after the scrape. Hard refresh clears those keys plus `<roll>Freshness` before publishing.
+- `messaging/publisher.py` claims `queued:<roll>` with `SET NX` and `SADD`s `RABBITMQ_ROLL_NUMBERS`; the consumer deletes both after the scrape. A failed scrape sets `scrape_fail:<roll>` for 15 minutes so GET does not immediately re-queue. Hard refresh clears those keys plus `<roll>Freshness` and `scrape_fail:<roll>` before publishing.
 
 Class cohort pairing follows JNTUH admission-year/type rules implemented in both `messaging.consumer.get_class_prefixes()` and `service/getClassResults.py`. Do not simplify it to a literal `5↔A` character swap.
 

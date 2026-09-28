@@ -105,6 +105,21 @@ def test_publish_claims_and_enqueues_new_roll():
     redis_client.sadd.assert_called_once_with(RABBITMQ_ROLL_NUMBERS, "226Q1A4304")
 
 
+def test_publish_skips_during_scrape_cooldown():
+    app, exchange = _app()
+    redis_client = _redis(get=MagicMock(return_value="1"))
+
+    with (
+        patch.object(redisConnection, "client", redis_client),
+        patch("messaging.publisher.check_valid_url_in_redis", return_value="https://ok"),
+    ):
+        response = asyncio.run(publish_message(app, "226Q1A4304"))
+
+    assert response.status_code == 202
+    exchange.publish.assert_not_awaited()
+    redis_client.sadd.assert_not_called()
+
+
 def test_freshness_publish_skips_when_queue_is_busy():
     app, exchange = _app(message_count=10)
     redis_client = _redis()
@@ -234,7 +249,7 @@ def test_hard_refresh_clears_queue_guards():
 
     invalidate.assert_called_once_with("226Q1A4304")
     redis_client.delete.assert_called_once_with(
-        "226Q1A4304Freshness", "queued:226Q1A4304"
+        "226Q1A4304Freshness", "queued:226Q1A4304", "scrape_fail:226Q1A4304"
     )
     redis_client.srem.assert_called_once_with(RABBITMQ_ROLL_NUMBERS, "226Q1A4304")
     publish.assert_awaited_once()

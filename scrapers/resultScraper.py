@@ -5,7 +5,7 @@ from __future__ import annotations
 import aiohttp
 
 from config.settings import JNTUK_RESULTS_API_BASE
-from scrapers.jntukClient import fetch_notifications, fetch_student_results
+from scrapers.jntukClient import JntukRateLimitedError, fetch_notifications, fetch_student_results
 from config.collegeDetails import get_college_name
 from utils.jntuk import (
     college_code_from_roll,
@@ -97,6 +97,11 @@ class ResultScraper:
                         url=self.url,
                         session=session,
                     )
+                except JntukRateLimitedError as error:
+                    self.logger.warning(
+                        f"JNTUK lookup failed for {self.roll_number} {result_id}: {error}"
+                    )
+                    break
                 except Exception as error:
                     self.logger.warning(
                         f"JNTUK lookup failed for {self.roll_number} {result_id}: {error}"

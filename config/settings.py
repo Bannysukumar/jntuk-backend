@@ -153,6 +153,12 @@ JNTUK_RATE_LIMIT_BACKOFF_SECONDS = _bounded_float_env(
     "JNTUK_RATE_LIMIT_BACKOFF_SECONDS", 45.0, 5.0, 180.0
 )
 JNTUK_MAX_RETRIES = _bounded_int_env("JNTUK_MAX_RETRIES", 4, 1, 8)
+JNTUK_CIRCUIT_KEY = "jntuk_rate_limited"
+JNTUK_CIRCUIT_EXPIRY = _bounded_int_env("JNTUK_CIRCUIT_EXPIRY", 180, 30, 1800)
+SCRAPE_FAIL_COOLDOWN_PREFIX = "scrape_fail:"
+SCRAPE_FAIL_COOLDOWN_EXPIRY = _bounded_int_env(
+    "SCRAPE_FAIL_COOLDOWN_EXPIRY", 900, 60, 3600
+)
 # Returning students are not re-queued for a freshness scrape more often
 # than this. 8k daily readers would otherwise enqueue 8k JNTUK jobs a day.
 FRESHNESS_SCRAPE_EXPIRY = _bounded_int_env(

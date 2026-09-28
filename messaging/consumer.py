@@ -14,15 +14,21 @@ from config.settings import (
     QUEUE_NAME,
     RABBITMQ_URL,
     RABBITMQ_ROLL_NUMBERS,
+    SCRAPE_FAIL_COOLDOWN_EXPIRY,
+    SCRAPE_FAIL_COOLDOWN_PREFIX,
 )
 from database.operations import get_exam_codes_from_database, save_to_database
 from scrapers.resultNotificationScraper import refresh_notifications
 from scrapers.resultScraper import ResultScraper
+from scrapers.jntukClient import jntuk_circuit_ttl
 from scrapers.serverChecker import check_url
 from subscriptions.send_notification import send_push_notification_to_particular_user
 from subscriptions.mobile_notification import notify_student_result_updated
 from utils.logger import rabbitmq_logger, logger, scraping_logger
 from utils.caching import invalidate_all_cache
+
+
+_scrape_lock = asyncio.Lock()
 
 
 def get_class_prefixes(roll_number: str) -> tuple[str, str]:
@@ -63,7 +69,36 @@ def iter_class_roll_numbers(roll_number: str) -> Iterator[str]:
                 yield f"{prefix}{letter}{number}"
 
 
-async def process_class_results_message(message_body: str) -> None:
+def _set_scrape_cooldown(roll_number: str) -> None:
+    if not redisConnection.client or roll_number == NOTIFICATIONS_REDIS_KEY:
+        return
+    redisConnection.client.set(
+        f"{SCRAPE_FAIL_COOLDOWN_PREFIX}{roll_number}",
+        "1",
+        ex=SCRAPE_FAIL_COOLDOWN_EXPIRY,
+    )
+
+
+async def _pending_student_jobs(connection) -> int:
+    if connection is None:
+        return 0
+    async with connection.channel() as channel:
+        queue = await channel.declare_queue(QUEUE_NAME, durable=True)
+        return int(queue.declaration_result.message_count or 0)
+
+
+async def _wait_for_student_queue(connection) -> None:
+    while True:
+        pending = await _pending_student_jobs(connection)
+        if pending <= 0:
+            return
+        rabbitmq_logger.info(
+            f"Pausing class scrape; {pending} student jobs waiting"
+        )
+        await asyncio.sleep(5)
+
+
+async def process_class_results_message(message_body: str, connection=None) -> None:
     """Scrape a class unless either paired cohort was processed in the last day."""
     rabbitmq_logger.info(f"Processing class results message: {message_body}")
     class_prefixes = get_class_prefixes(message_body)
@@ -82,6 +117,13 @@ async def process_class_results_message(message_body: str) -> None:
 
     consecutive_empty_results = 0
     for student_roll_number in iter_class_roll_numbers(message_body):
+        if jntuk_circuit_ttl() > 0:
+            rabbitmq_logger.warning(
+                f"Stopping class results for {message_body[:8]}; "
+                "JNTUK is rate-limiting"
+            )
+            return
+        await _wait_for_student_queue(connection)
         has_results = await process_message(student_roll_number)
         if has_results:
             consecutive_empty_results = 0
@@ -104,6 +146,11 @@ async def process_class_results_message(message_body: str) -> None:
 
 # Define a function to process messages
 async def process_message(message_body: str) -> bool:
+    async with _scrape_lock:
+        return await _process_message(message_body)
+
+
+async def _process_message(message_body: str) -> bool:
     try:
         """
         Process the consumed message.
@@ -145,6 +192,7 @@ async def process_message(message_body: str) -> bool:
 
         if results is None:
             logger.warning(f"Failed to get results: {message_body}")
+            _set_scrape_cooldown(message_body)
             return False
 
         logger.info(f"Results was successfully extracted: {message_body}")
@@ -165,6 +213,7 @@ async def process_message(message_body: str) -> bool:
 
     except Exception as e:
         scraping_logger.error(f"Error while scarping results: {e}")
+        _set_scrape_cooldown(message_body)
         return False
 
     """Consume messages from RabbitMQ and pass them to the processing function."""
@@ -201,12 +250,14 @@ async def _consume_default_queue(queue) -> None:
                     await message.reject(requeue=False)
 
 
-async def _consume_class_results_queue(queue) -> None:
+async def _consume_class_results_queue(queue, connection) -> None:
     async with queue.iterator() as queue_iter:
         async for message in queue_iter:
             try:
                 async with message.process():
-                    await process_class_results_message(message.body.decode())
+                    await process_class_results_message(
+                        message.body.decode(), connection
+                    )
             except Exception as error:
                 rabbitmq_logger.error(
                     f"Error processing class results message: {error},{message.body}"
@@ -249,7 +300,7 @@ async def consume_messages():
 
             await asyncio.gather(
                 _consume_default_queue(queue),
-                _consume_class_results_queue(class_results_queue),
+                _consume_class_results_queue(class_results_queue, connection),
             )
 
     except asyncio.CancelledError:
