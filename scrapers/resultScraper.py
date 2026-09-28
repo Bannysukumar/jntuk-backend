@@ -79,6 +79,7 @@ class ResultScraper:
             return None
 
         exam_results = []
+        consecutive_rate_limits = 0
         async with aiohttp.ClientSession() as session:
             for notification in relevant:
                 result_id = str(notification.get("uuid") or "").strip()
@@ -98,15 +99,20 @@ class ResultScraper:
                         session=session,
                     )
                 except JntukRateLimitedError as error:
+                    consecutive_rate_limits += 1
                     self.logger.warning(
                         f"JNTUK lookup failed for {self.roll_number} {result_id}: {error}"
                     )
-                    break
+                    if consecutive_rate_limits >= 2:
+                        break
+                    continue
                 except Exception as error:
                     self.logger.warning(
                         f"JNTUK lookup failed for {self.roll_number} {result_id}: {error}"
                     )
                     continue
+
+                consecutive_rate_limits = 0
 
                 rows = payload.get("data") if payload.get("status") == 200 else None
                 if not isinstance(rows, list) or not rows:
