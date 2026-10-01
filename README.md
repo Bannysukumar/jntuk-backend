@@ -206,4 +206,4 @@ This repository is open source and maintained by [Banny Sukumar](https://github.
 
 ## License
 
-Released under the [MIT License](LICENSE). Copyright (c) 2026 Banny Sukumar. See [CONTRIBUTING.md](CONTRIBUTING.md) if you want to help.
+Released under the [GPL-3.0 License](LICENSE). Copyright (c) 2026 Banny Sukumar. See [CONTRIBUTING.md](CONTRIBUTING.md) if you want to help.
