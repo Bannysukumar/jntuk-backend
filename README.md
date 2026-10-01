@@ -197,3 +197,13 @@ This project is licensed under the GPL-3.0 .
 ## Acknowledgements
 
 Special thanks to all contributors and the open-source community for their invaluable support.
+
+<!-- readme-seo: bannysukumar -->
+
+## Open source
+
+This repository is open source and maintained by [Banny Sukumar](https://github.com/Bannysukumar). JNTUK Backend is published so other developers can study the code and contribute.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Banny Sukumar. See [CONTRIBUTING.md](CONTRIBUTING.md) if you want to help.
